@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LawLens | High Court Intelligence Feed</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .glass-morphism {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(229, 231, 235, 0.5);
+        }
+        .court-badge {
+            transition: all 0.2s ease;
+        }
+        .court-badge:hover { transform: translateY(-1px); }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 glass-morphism shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="bg-indigo-600 p-2 rounded-lg">
+                        <i class="fas fa-gavel text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">LawLens</h1>
+                        <p class="text-xs font-medium text-slate-500 uppercase tracking-widest">High Court Intelligence Feed</p>
+                    </div>
+                </div>
+                
+                <div class="relative flex-1 max-w-md">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <input type="text" id="searchInput" placeholder="Search cases, keywords, or acts..." 
+                        class="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none">
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Filter Bar -->
+        <div class="mb-8 overflow-x-auto">
+            <div class="flex items-center gap-2 pb-2" id="filterBar">
+                <button onclick="filterByCourt('All')" class="court-btn px-4 py-2 rounded-full text-sm font-medium bg-indigo-600 text-white shadow-md transition-all">All Courts</button>
+                <!-- Court buttons will be injected here -->
+            </div>
+        </div>
+
+        <!-- Feed Container -->
+        <div id="feedContainer" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Loading State -->
+            <div class="col-span-full py-20 text-center" id="loadingState">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-slate-300 border-t-indigo-600 mb-4"></div>
+                <p class="text-slate-500 font-medium">Loading intelligence feed...</p>
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="hidden col-span-full py-20 text-center">
+            <i class="fas fa-folder-open text-slate-300 text-5xl mb-4"></i>
+            <p class="text-slate-500 font-medium">No matching cases found.</p>
+        </div>
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 mt-20 py-8">
+        <div class="max-w-7xl mx-auto px-4 text-center">
+            <p class="text-slate-400 text-sm">© 2026 LawLens Intelligence. All data aggregated from official public feeds.</p>
+        </div>
+    </footer>
+
+    <script>
+        let allData = [];
+        let currentFilter = 'All';
+
+        const courts = [
+            "Delhi High Court", "Bombay High Court", "Allahabad High Court", 
+            "Madras High Court", "Karnataka High Court", "Patna High Court", "Gujarat High Court"
+        ];
+
+        // Initialize Filter Buttons
+        const filterBar = document.getElementById('filterBar');
+        courts.forEach(court => {
+            const btn = document.createElement('button');
+            btn.className = 'court-btn px-4 py-2 rounded-full text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all whitespace-nowrap';
+            btn.textContent = court;
+            btn.onclick = () => filterByCourt(court);
+            filterBar.appendChild(btn);
+        });
+
+        async function fetchData() {
+            // URL points to the GitHub repository to ensure the preview can always reach the data
+            const DATA_URL = 'https://raw.githubusercontent.com/citecase/lawlens/main/lawlens.json';
+            
+            try {
+                const response = await fetch(DATA_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                allData = await response.json();
+                renderFeed(allData);
+                document.getElementById('loadingState').classList.add('hidden');
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                document.getElementById('feedContainer').innerHTML = `
+                    <div class="col-span-full p-6 bg-red-50 text-red-700 rounded-xl border border-red-100">
+                        <i class="fas fa-exclamation-circle mr-2"></i> 
+                        <strong>Connection Error:</strong> Could not load case data from GitHub.
+                        <p class="mt-2 text-xs opacity-75">Please ensure lawlens.json is pushed to the 'main' branch of the citecase/lawlens repository.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function getCategoryColor(cat) {
+            const colors = {
+                'Criminal': 'bg-rose-100 text-rose-700',
+                'Civil': 'bg-blue-100 text-blue-700',
+                'Tech/IP': 'bg-purple-100 text-purple-700',
+                'Constitutional': 'bg-amber-100 text-amber-700',
+                'Family': 'bg-emerald-100 text-emerald-700',
+                'General': 'bg-slate-100 text-slate-700'
+            };
+            return colors[cat] || colors['General'];
+        }
+
+        function renderFeed(data) {
+            const container = document.getElementById('feedContainer');
+            const emptyState = document.getElementById('emptyState');
+            
+            // Clear but keep loading hidden if already fetched
+            const loading = document.getElementById('loadingState');
+            container.innerHTML = '';
+            if (loading) container.appendChild(loading);
+
+            if (data.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            data.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow flex flex-col gap-4';
+                
+                const categoriesHtml = item.categories.map(cat => 
+                    `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${getCategoryColor(cat)}">${cat}</span>`
+                ).join(' ');
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start gap-4">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">${item.court}</span>
+                                <span class="text-xs text-slate-400 font-medium"><i class="far fa-calendar-alt mr-1"></i> ${item.date}</span>
+                            </div>
+                            <h3 class="text-lg font-bold text-slate-900 leading-snug mb-2">${item.title}</h3>
+                        </div>
+                    </div>
+                    
+                    <p class="text-slate-600 text-sm leading-relaxed">${item.summary}</p>
+                    
+                    <div class="space-y-2 mt-auto pt-4 border-t border-slate-100">
+                        <div class="flex flex-wrap gap-2">
+                            ${categoriesHtml}
+                        </div>
+                        <ul class="text-xs text-slate-500 space-y-1 mt-2">
+                            ${item.key_points.map(pt => `<li class="flex items-start gap-2"><i class="fas fa-circle text-[6px] mt-1.5 text-slate-300"></i> ${pt}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function filterByCourt(court) {
+            currentFilter = court;
+            
+            // Update buttons UI
+            document.querySelectorAll('.court-btn').forEach(btn => {
+                if (btn.textContent === court || (court === 'All' && btn.textContent === 'All Courts')) {
+                    btn.className = 'court-btn px-4 py-2 rounded-full text-sm font-medium bg-indigo-600 text-white shadow-md transition-all whitespace-nowrap';
+                } else {
+                    btn.className = 'court-btn px-4 py-2 rounded-full text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all whitespace-nowrap';
+                }
+            });
+
+            applyFilters();
+        }
+
+        function applyFilters() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            const filtered = allData.filter(item => {
+                const matchesCourt = currentFilter === 'All' || item.court === currentFilter;
+                const matchesSearch = item.title.toLowerCase().includes(searchTerm) || 
+                                     item.summary.toLowerCase().includes(searchTerm) ||
+                                     item.categories.some(c => c.toLowerCase().includes(searchTerm));
+                return matchesCourt && matchesSearch;
+            });
+
+            renderFeed(filtered);
+        }
+
+        document.getElementById('searchInput').oninput = applyFilters;
+
+        // Start
+        window.onload = fetchData;
+    </script>
+</body>
+</html>
