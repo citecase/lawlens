@@ -154,12 +154,21 @@
                     `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${getCategoryColor(cat)}">${cat}</span>`
                 ).join(' ');
 
+                const sourceLinkHtml = item.link 
+                    ? `<a href="${item.link}" target="_blank" class="text-indigo-600 hover:text-indigo-800 transition-colors">
+                        <i class="fas fa-external-link-alt"></i>
+                       </a>`
+                    : '';
+
                 card.innerHTML = `
                     <div class="flex justify-between items-start gap-4">
                         <div class="flex-1">
-                            <div class="flex items-center gap-2 mb-2">
-                                <span class="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">${item.court}</span>
-                                <span class="text-xs text-slate-400 font-medium"><i class="far fa-calendar-alt mr-1"></i> ${item.date}</span>
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">${item.court}</span>
+                                    <span class="text-xs text-slate-400 font-medium"><i class="far fa-calendar-alt mr-1"></i> ${item.date}</span>
+                                </div>
+                                ${sourceLinkHtml}
                             </div>
                             <h3 class="text-lg font-bold text-slate-900 leading-snug mb-2">${item.title}</h3>
                         </div>
