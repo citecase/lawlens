@@ -16,13 +16,22 @@ COURTS = {
     "Gujarat High Court": "https://t.me/s/Lawlens_IN_GHC"
 }
 
-def parse_legal_text(text, court_name):
+def parse_legal_text(text, court_name, msg_element):
     """
-    Parses raw Telegram text into a structured dictionary.
+    Parses raw Telegram text and extracts links.
     """
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if not lines:
         return None
+
+    # Extract the source link from the message context if possible
+    source_link = None
+    # Look for the 'tgme_widget_message_date' link which is the permanent link to the post
+    parent = msg_element.find_parent("div", class_="tgme_widget_message")
+    if parent:
+        link_tag = parent.find("a", class_="tgme_widget_message_date")
+        if link_tag and link_tag.has_attr('href'):
+            source_link = link_tag['href']
 
     title = lines[0]
     title = re.sub(r'^(JUST IN:|BREAKING:|UPDATE:)\s*', '', title, flags=re.I)
@@ -58,7 +67,8 @@ def parse_legal_text(text, court_name):
         "court": court_name,
         "summary": summary,
         "key_points": key_points[:3],
-        "categories": categories
+        "categories": categories,
+        "link": source_link
     }
 
 def scrape_court(court_name, url):
@@ -78,7 +88,7 @@ def scrape_court(court_name, url):
     for wrapper in message_wrappers:
         raw_text = wrapper.get_text(separator="\n").strip()
         if len(raw_text) > 60:
-            data = parse_legal_text(raw_text, court_name)
+            data = parse_legal_text(raw_text, court_name, wrapper)
             if data:
                 parsed_updates.append(data)
                 
@@ -117,15 +127,18 @@ def update_files(all_new_data):
     # Generate Markdown grouped by court
     md_content = "# LawLens High Court Intelligence Feed\n\n*Aggregated legal updates from 7 High Courts (No AI).*\n\n"
     
-    # Sort data by date for the MD view (optional)
     for court in COURTS.keys():
         court_items = [i for i in final_data if i['court'] == court]
         if court_items:
             md_content += f"## {court}\n"
-            for item in court_items[:10]: # Show latest 10 per court in MD
-                md_content += f"### {item['title']}\n"
+            for item in court_items[:10]:
+                md_content += f"### [{item['title']}]({item.get('link', '#')})\n"
                 md_content += f"- **Date:** {item['date']}\n"
-                md_content += f"- **Category:** {', '.join(item['categories'])}\n\n"
+                md_content += f"- **Category:** {', '.join(item['categories'])}\n"
+                if item.get('link'):
+                    md_content += f"- **Source:** [View on Telegram]({item['link']})\n\n"
+                else:
+                    md_content += "\n"
                 md_content += f"{item['summary']}\n\n"
                 if item.get('key_points'):
                     for pt in item['key_points']:
