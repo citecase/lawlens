@@ -6,43 +6,43 @@ import re
 from datetime import datetime
 
 # --- Configuration ---
-TELEGRAM_URL = "https://t.me/s/Lawlens_IN_DHC"
-APP_ID = "lawlens-dhc-sync"
+COURTS = {
+    "Delhi High Court": "https://t.me/s/Lawlens_IN_DHC",
+    "Bombay High Court": "https://t.me/s/Lawlens_IN_BHC",
+    "Allahabad High Court": "https://t.me/s/Lawlens_IN_AHC",
+    "Madras High Court": "https://t.me/s/Lawlens_IN_MHC",
+    "Karnataka High Court": "https://t.me/s/Lawlens_IN_KAHC",
+    "Patna High Court": "https://t.me/s/Lawlens_IN_PHC",
+    "Gujarat High Court": "https://t.me/s/Lawlens_IN_GHC"
+}
 
-def parse_legal_text(text):
+def parse_legal_text(text, court_name):
     """
-    Parses raw Telegram text into a structured dictionary without AI.
-    Looks for common legal news patterns.
+    Parses raw Telegram text into a structured dictionary.
     """
-    # Try to find a title (usually the first bolded line or the first line)
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     if not lines:
         return None
 
     title = lines[0]
-    # Clean up common prefixes from titles
     title = re.sub(r'^(JUST IN:|BREAKING:|UPDATE:)\s*', '', title, flags=re.I)
     
-    # Try to extract a date (looks for DD.MM.YYYY or similar)
     date_match = re.search(r'(\d{1,2}[\.\/]\d{1,2}[\.\/]\d{2,4})', text)
     date_str = date_match.group(1) if date_match else datetime.now().strftime("%Y-%m-%d")
 
-    # Simple summary: use the first 2-3 lines after the title
     summary = " ".join(lines[1:3]) if len(lines) > 1 else "No summary available."
     
-    # Extract Key Points (lines starting with - or •)
     key_points = [line.strip('- •') for line in lines if line.startswith(('-', '•'))]
     if not key_points and len(lines) > 3:
-        key_points = lines[3:5] # Fallback to next lines
+        key_points = lines[3:5]
 
-    # Basic Categorization based on keywords
     categories = []
     keywords = {
-        "Criminal": ["bail", "ipc", "crpc", "arrest", "police", "fir"],
-        "Civil": ["suit", "property", "contract", "recovery"],
-        "Tech/IP": ["patent", "trademark", "copyright", "it act", "ai", "digital"],
-        "Constitutional": ["article", "writ", "fundamental rights"],
-        "Family": ["divorce", "maintenance", "custody"]
+        "Criminal": ["bail", "ipc", "crpc", "arrest", "police", "fir", "quashing"],
+        "Civil": ["suit", "property", "contract", "recovery", "injunction"],
+        "Tech/IP": ["patent", "trademark", "copyright", "it act", "ai", "digital", "privacy"],
+        "Constitutional": ["article", "writ", "fundamental rights", "petition"],
+        "Family": ["divorce", "maintenance", "custody", "matrimonial"]
     }
     
     for cat, words in keywords.items():
@@ -53,44 +53,42 @@ def parse_legal_text(text):
         categories = ["General"]
 
     return {
-        "title": title[:100], # Cap title length
+        "title": title[:120],
         "date": date_str,
-        "court": "Delhi High Court",
+        "court": court_name,
         "summary": summary,
         "key_points": key_points[:3],
         "categories": categories
     }
 
-def scrape_telegram():
-    """Scrapes the public web preview of the Telegram channel."""
-    print(f"Fetching updates from {TELEGRAM_URL}...")
+def scrape_court(court_name, url):
+    """Scrapes a specific court's telegram feed."""
+    print(f"Fetching {court_name} updates...")
     try:
-        response = requests.get(TELEGRAM_URL, timeout=15)
+        response = requests.get(url, timeout=15)
         response.raise_for_status()
     except Exception as e:
-        print(f"Error fetching Telegram: {e}")
+        print(f"Error fetching {court_name}: {e}")
         return []
 
     soup = BeautifulSoup(response.content, "html.parser")
-    # Find message containers
     message_wrappers = soup.find_all("div", class_="tgme_widget_message_text")
     
     parsed_updates = []
     for wrapper in message_wrappers:
         raw_text = wrapper.get_text(separator="\n").strip()
-        if len(raw_text) > 50: # Ignore very short messages (links only, etc.)
-            data = parse_legal_text(raw_text)
+        if len(raw_text) > 60:
+            data = parse_legal_text(raw_text, court_name)
             if data:
                 parsed_updates.append(data)
                 
     return parsed_updates
 
-def update_files(new_data):
-    """Merges new data with existing records and updates .json and .md files."""
+def update_files(all_new_data):
+    """Merges new data from all courts and updates files."""
     json_path = "lawlens.json"
     md_path = "lawlens.md"
 
-    # Load existing data
     existing_data = []
     if os.path.exists(json_path):
         try:
@@ -99,42 +97,53 @@ def update_files(new_data):
         except:
             existing_data = []
 
-    # De-duplication based on title
-    existing_titles = {item['title'] for item in existing_data}
+    # De-duplication using title + court
+    existing_keys = {f"{item['title']}-{item['court']}" for item in existing_data}
     added_count = 0
-    for item in reversed(new_data): # Newest usually at bottom of page
-        if item['title'] not in existing_titles:
+    
+    for item in all_new_data:
+        key = f"{item['title']}-{item['court']}"
+        if key not in existing_keys:
             existing_data.insert(0, item)
             added_count += 1
 
-    # Limit storage
-    final_data = existing_data[:100]
+    # Keep a manageable history
+    final_data = existing_data[:200]
 
     # Write JSON
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(final_data, f, indent=2, ensure_ascii=False)
 
-    # Generate Markdown
-    md_content = "# LawLens Delhi High Court Feed\n\n*Auto-updated via Regex Scraper (No AI).*\n\n"
-    for item in final_data:
-        md_content += f"## {item['title']}\n"
-        md_content += f"- **Date:** {item['date']}\n"
-        md_content += f"- **Category:** {', '.join(item['categories'])}\n\n"
-        md_content += f"{item['summary']}\n\n"
-        if item.get('key_points'):
-            md_content += "### Key Points\n"
-            for pt in item['key_points']:
-                md_content += f"- {pt}\n"
-        md_content += "\n---\n\n"
+    # Generate Markdown grouped by court
+    md_content = "# LawLens High Court Intelligence Feed\n\n*Aggregated legal updates from 7 High Courts (No AI).*\n\n"
+    
+    # Sort data by date for the MD view (optional)
+    for court in COURTS.keys():
+        court_items = [i for i in final_data if i['court'] == court]
+        if court_items:
+            md_content += f"## {court}\n"
+            for item in court_items[:10]: # Show latest 10 per court in MD
+                md_content += f"### {item['title']}\n"
+                md_content += f"- **Date:** {item['date']}\n"
+                md_content += f"- **Category:** {', '.join(item['categories'])}\n\n"
+                md_content += f"{item['summary']}\n\n"
+                if item.get('key_points'):
+                    for pt in item['key_points']:
+                        md_content += f"- {pt}\n"
+                md_content += "\n"
+            md_content += "---\n\n"
 
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(md_content)
 
-    print(f"Sync complete. Added {added_count} new records.")
+    print(f"Sync complete. Added {added_count} new records across all courts.")
 
 if __name__ == "__main__":
-    updates = scrape_telegram()
-    if updates:
-        update_files(updates)
+    combined_data = []
+    for name, url in COURTS.items():
+        combined_data.extend(scrape_court(name, url))
+    
+    if combined_data:
+        update_files(combined_data)
     else:
-        print("No processable updates found.")
+        print("No new updates found from any source.")
